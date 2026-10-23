@@ -16,5 +16,6 @@ remote navigation, cold-boot handover, HDMI selection from the launcher and Live
 validated. This branch is an Android 5.1 experiment; the upstream launcher still targets Android 8.0
 (API 26) and newer.
 
-The repository's Python wiring test passes locally. The Android Gradle build needs JDK 17 and was not run
-in the current Windows environment because Java is unavailable.
+The Python wiring tests pass. On Windows, with JDK 17 and Android SDK 34, this completed successfully:
+`gradlew.bat --no-daemon testReleaseUnitTest lintRelease assembleRelease --console=plain`. The release APK is
+913,343 bytes, above the upstream 480 KB APK gate; this fork does not commit the APK.

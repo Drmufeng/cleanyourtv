@@ -132,7 +132,7 @@ final class WallpaperPlayer {
         File file = new File(context.getCacheDir(), "bundled-wallpaper-v1.jpg");
         if (file.isFile() && file.length() > 0) return file;
         File temp = new File(context.getCacheDir(), "bundled-wallpaper-v1.tmp");
-        try (InputStream in = context.getResources().openRawResource(R.drawable.banner_wallpaper);
+        try (InputStream in = context.getResources().openRawResource(R.raw.banner_wallpaper);
              OutputStream out = new FileOutputStream(temp)) {
             byte[] buffer = new byte[8192];
             int n;
