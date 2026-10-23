@@ -41,6 +41,9 @@
          "boot_to_live_tv": true in a theme's config.json. -->
     <bool name="boot_to_live_tv">false</bool>
 
+    <!-- Resume the launcher after boot on firmware that starts its own home directly. Off by default. -->
+    <bool name="launch_after_boot">false</bool>
+
     <!-- Some TVs give their Live TV app no leanback entry point at all, so `live_tv_package` above
          resolves to nothing (TCL Android TV 9 on China-market sets is one). This action is then sent
          to that package instead, and the app starts normally. Leave empty to omit. -->
@@ -198,6 +201,9 @@
          through it. false (the default) keeps the solid near-black band, or the cinematic shelf's dark glass. Can
          also be set with "dock_glass": true in a theme's config.json. -->
     <bool name="dock_glass">false</bool>
+    <!-- Room under the dock. Off upstream; the API 22 legacy build turns it on so the dock sits on the bottom
+         edge and the next grid row does not peek into the bottom of the screen. -->
+    <bool name="dock_flush">false</bool>
     <!-- A reorder button (two arrows) in the top bar. Off by default: reordering is also in the Settings
          button's long-press menu, so it needs no extra button on screen. -->
     <bool name="reorder_button">false</bool>
@@ -222,6 +228,10 @@
     <!-- Wallpapers decode as RGB_565 (2 bytes a pixel, 4 MB at 1080p), which bands dark gradients such as a night
          sky, most of all under wallpaper_dim. true decodes them in 32-bit colour: 8 MB, for TVs with 2 GB or more. -->
     <bool name="wallpaper_true_color">false</bool>
+    <!-- A wallpaper bundled in the APK, used only when no theme wallpaper is present. Off upstream;
+         the API 22 legacy build in values-v22 turns it on for a TV whose external storage is read-only. -->
+    <bool name="bundled_wallpaper">false</bool>
+    <integer name="bundled_wallpaper_dim">0</integer>
     <!-- Rotating wallpapers: show each picture's name under the top-right buttons, from a captions.txt next to the
          pictures in wallpapers/ ("01-dusk.jpg<TAB>Dusk over the peaks", one per line). A picture without a line
          shows no name. Can also be set with "wallpaper_captions": true in a theme's config.json. -->

@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.os.Build;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -17,6 +18,10 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -54,10 +59,21 @@ final class WallpaperPlayer {
     WallpaperPlayer(Context context, FrameLayout root, Config config) {
         this.root = root;
         files = new ArrayList<>(config.wallpapers);
+        boolean bundled = false;
+        if (config.wallpaperEnabled && files.isEmpty()
+                && context.getResources().getBoolean(R.bool.bundled_wallpaper)) {
+            File cached = bundledWallpaper(context);
+            if (cached != null) {
+                files.add(cached);
+                bundled = true;
+            }
+        }
         interval = config.wallpaperRotationMinutes * 60_000L;
         bitmapConfig = config.wallpaperTrueColor ? Bitmap.Config.ARGB_8888 : Bitmap.Config.RGB_565;
         // The dim is painted into the picture (decode), so no full-screen shade layer is drawn on every frame.
-        dimColor = config.wallpaperDim > 0 ? (config.wallpaperDim * 255 / 100) << 24 : 0;
+        int dim = config.wallpaperDim;
+        if (bundled && dim == 0) dim = context.getResources().getInteger(R.integer.bundled_wallpaper_dim);
+        dimColor = dim > 0 ? (dim * 255 / 100) << 24 : 0;
         order = config.wallpaperOrder;
         preferences = context.getSharedPreferences("wallpaper_rotation", Context.MODE_PRIVATE);
         // Playback state belongs to one collection. Changing the collection starts from its first
@@ -109,6 +125,24 @@ final class WallpaperPlayer {
             files.remove(first);   // unreadable or over 4K: try another, or keep the plain colour
             first = WallpaperRotation.pick(files, previous, order, random);
         }
+    }
+
+    /** The APK's wallpaper copied into internal cache: some legacy TVs expose external storage read-only. */
+    private static File bundledWallpaper(Context context) {
+        File file = new File(context.getCacheDir(), "bundled-wallpaper-v1.jpg");
+        if (file.isFile() && file.length() > 0) return file;
+        File temp = new File(context.getCacheDir(), "bundled-wallpaper-v1.tmp");
+        try (InputStream in = context.getResources().openRawResource(R.drawable.banner_wallpaper);
+             OutputStream out = new FileOutputStream(temp)) {
+            byte[] buffer = new byte[8192];
+            int n;
+            while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+        } catch (IOException e) {
+            return null;
+        }
+        if (temp.renameTo(file)) return file;
+        temp.delete();
+        return file.isFile() && file.length() > 0 ? file : null;
     }
 
     void start() {
@@ -248,14 +282,20 @@ final class WallpaperPlayer {
             Bitmap decoded = BitmapFactory.decodeFile(file.getPath(), options);
             if (decoded == null) return null;
             if (dimColor != 0) new Canvas(decoded).drawColor(dimColor);
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return decoded;
             // One copy in GPU memory instead of a software bitmap plus its texture; the decode stays off the UI
             // thread for rotations, and Home's return no longer uploads 4-8 MB to the GPU.
-            Bitmap gpu = decoded.copy(Bitmap.Config.HARDWARE, false);
+            Bitmap gpu = copyToHardware(decoded);
             if (gpu == null) return decoded;
             decoded.recycle();
             return gpu;
         } catch (Exception | OutOfMemoryError failure) {
             return null;
         }
+    }
+
+    @android.annotation.TargetApi(Build.VERSION_CODES.O)
+    private static Bitmap copyToHardware(Bitmap decoded) {
+        return decoded.copy(Bitmap.Config.HARDWARE, false);
     }
 }

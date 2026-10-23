@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <bool name="launch_after_boot">true</bool>
+
+    <!-- Fallback for firmware that starts its stock launcher before this one on wake or reboot. Only acts when
+         HomeKeyService is enabled in the TV's accessibility settings; the stock launcher stays installed and
+         enabled for recovery. -->
+    <string name="stock_home_redirect" translatable="false">com.jamdeo.tv.vod</string>
+    <bool name="bundled_wallpaper">true</bool>
+    <integer name="bundled_wallpaper_dim">15</integer>
+
+    <!-- Glass look without the app-coloured glow: the wallpaper stays the subject. -->
+    <bool name="ambient_glow">false</bool>
+    <bool name="app_glow">false</bool>
+    <bool name="cinematic_home">false</bool>
+    <bool name="dock_glass">true</bool>
+    <bool name="icon_only_buttons">true</bool>
+    <bool name="focus_overshoot">false</bool>
+    <bool name="dock_flush">true</bool>
+
+    <!-- Live Channels stays installed and reachable from Inputs; its tile and TestApp's are hidden. -->
+    <string name="live_tv_package" translatable="false">com.mstar.android.tv.app</string>
+    <string-array name="hidden_apps">
+        <item>com.mediatek.wwtv.tvcenter</item>
+        <item>com.mitv.gallery</item>
+        <item>com.mstar.android.tv.app</item>
+        <item>com.hisense.ctsapp</item>
+    </string-array>
+</resources>

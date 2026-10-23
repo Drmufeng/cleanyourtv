@@ -6,18 +6,16 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.os.Build;
+import android.os.SystemClock;
 import android.os.UserManager;
-import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
 import android.provider.Settings;
 import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.Toast;
 
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Sends the remote's Home button to this launcher on remotes that emit KEYCODE_ALL_APPS for Home
@@ -47,17 +45,32 @@ public class HomeKeyService extends AccessibilityService {
 
     /** Waits for the user to unlock when Android binds this service at boot; null once the config is read. */
     private BroadcastReceiver unlockReceiver;
-    /** The stock launcher's HOME activities (stock_home_redirect), disabled ones included. */
-    private final Set<String> stockHome = new HashSet<>();
+    /** stock_home_redirect: the stock launcher's package. Match the package, not one activity name: its loader
+     *  activity can own the window its home screen is drawn in. */
+    private String stockHomePackage = "";
+    private long lastStockHomeRedirect;
 
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
         settingsScancodes = getResources().getIntArray(R.array.settings_key_scancodes);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            loadConfig();
+            return;
+        }
+        waitForUserUnlock();
+    }
+
+    @android.annotation.TargetApi(Build.VERSION_CODES.N)
+    private void waitForUserUnlock() {
         // The service is directBootAware: Android 11 skips a service that is not while the user is still
         // locked at boot, writes accessibility_enabled=0 and, on TCL G03 firmware, never binds it after the
         // unlock. Config.load reads credential-protected storage, so wait for the unlock before reading it.
-        UserManager users = getSystemService(UserManager.class);
+        UserManager users = (UserManager) getSystemService(Context.USER_SERVICE);
+        if (users == null) {
+            loadConfig();
+            return;
+        }
         if (users.isUserUnlocked()) {
             loadConfig();
             return;
@@ -101,13 +114,7 @@ public class HomeKeyService extends AccessibilityService {
         appKeys = RemoteKeys.parseAppKeys(config.appKeys);
         appScancodes = RemoteKeys.parseAppScancodes(config.appKeys);
         RemoteKeys.applyKeyFilter(this, config.keyFilter);
-        stockHome.clear();
-        if (!config.stockHomeRedirect.isEmpty()) {
-            Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(config.stockHomeRedirect);
-            for (ResolveInfo ri : getPackageManager().queryIntentActivities(home, PackageManager.MATCH_DISABLED_COMPONENTS)) {
-                stockHome.add(ri.activityInfo.name);
-            }
-        }
+        stockHomePackage = config.stockHomeRedirect;
         holdAppKeys = RemoteKeys.parseHoldAppKeys(config.appKeys);
         holdAppScancodes = RemoteKeys.parseHoldAppScancodes(config.appKeys);
     }
@@ -159,13 +166,15 @@ public class HomeKeyService extends AccessibilityService {
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
-        // stock_home_redirect: the firmware turned the stock launcher back on and its home screen came up.
-        if (stockHome.isEmpty() || event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
-        CharSequence cls = event.getClassName();
-        if (cls != null && stockHome.contains(cls.toString())) {
-            startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(getPackageName())
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));
-        }
+        // stock_home_redirect: the firmware turned the stock launcher back on and one of its windows came up.
+        if (stockHomePackage.isEmpty() || event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
+        CharSequence pkg = event.getPackageName();
+        if (pkg == null || !stockHomePackage.contentEquals(pkg)) return;
+        long now = SystemClock.uptimeMillis();
+        if (now - lastStockHomeRedirect < 1000) return;
+        lastStockHomeRedirect = now;
+        startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(getPackageName())
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));
     }
 
     @Override

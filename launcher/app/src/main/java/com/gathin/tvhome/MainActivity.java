@@ -385,7 +385,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         ambient = findViewById(R.id.ambient);
         // The glow is one bitmap, so its alpha can be applied while drawing it. Otherwise every frame of
         // a fade renders it into a full-screen offscreen buffer first.
-        ambient.forceHasOverlappingRendering(false);
+        disableOverlappingRendering(ambient);
         ambientGlow = cfg.ambientGlow;
         appGlow = cfg.appGlow;
         if (!ambientGlow) ambient.setVisibility(View.GONE);
@@ -393,7 +393,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         hero = findViewById(R.id.hero);
         // The hero is now a group (name, and the cinematic lines): without this every fade of the default
         // shelf would render it through an offscreen buffer first, as the glow above notes.
-        hero.forceHasOverlappingRendering(false);
+        disableOverlappingRendering(hero);
         heroMeta = findViewById(R.id.heroMeta);
         heroDots = findViewById(R.id.heroDots);
         heroArt = findViewById(R.id.heroArt);
@@ -521,7 +521,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             // Keep the hero below the header when the library is enabled on a short screen,
             // even when the theme requests an extra visible row below the dock.
             int shelfClearance = cfg.appLibrary ? hero.getMeasuredHeight() + (int) (40 * density) : 0;
-            int want = Math.max(shelfClearance, h - dockRow - gridRows - (int) (AppAdapter.BOTTOM_ROOM_DP * density));
+            int bottomRoom = getResources().getBoolean(R.bool.dock_flush)
+                    ? 0 : (int) (AppAdapter.BOTTOM_ROOM_DP * density);
+            int want = Math.max(shelfClearance, h - dockRow - gridRows - bottomRoom);
             // Where the rows cannot fit even at the smallest tile (3 rows with the title on), the title keeps its
             // room above the dock and the last rows run off the bottom instead of the title drawing over the clock.
             if (MainActivity.this.dockRow && cfg.dockTitle && rowsBelowDock > 0) want = Math.max(want, (int) (AppAdapter.TITLE_ROOM_DP * density));
@@ -681,11 +683,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             registerReceiver(packageReceiver, packageFilter);
         }
 
-        ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
         if (tim != null) tim.registerCallback(inputCallback, handler);
         if (cm != null) {
-            cm.registerDefaultNetworkCallback(networkCallback);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                cm.registerDefaultNetworkCallback(networkCallback);
+            } else {
+                cm.registerNetworkCallback(new NetworkRequest.Builder()
+                        .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                        .build(), networkCallback);
+            }
             cm.registerNetworkCallback(new NetworkRequest.Builder()
                     .addTransportType(NetworkCapabilities.TRANSPORT_VPN)
                     .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
@@ -832,6 +840,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 handler.postDelayed(this::playPetalShower, 450);
             }
         }
+        // A cold start or a return from an app can leave the focus glass at the previous tile's size, which
+        // drew a frame over the hero and its neighbours. Refit once the tiles have settled after the resume.
+        grid.postDelayed(this::refitGlass, 300);
     }
 
     @Override
@@ -914,11 +925,23 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     /** True when PackageManager reports apps changed since the last rebuild (one binder call). */
     private boolean packagesChangedSinceRebuild() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false;
+        return packagesChangedSinceRebuildO();
+    }
+
+    @android.annotation.TargetApi(Build.VERSION_CODES.O)
+    private boolean packagesChangedSinceRebuildO() {
         ChangedPackages changed = getPackageManager().getChangedPackages(packageSequence);
         return changed != null && !changed.getPackageNames().isEmpty();
     }
 
     private int currentPackageSequence(int since) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return since;
+        return currentPackageSequenceO(since);
+    }
+
+    @android.annotation.TargetApi(Build.VERSION_CODES.O)
+    private int currentPackageSequenceO(int since) {
         ChangedPackages changed = getPackageManager().getChangedPackages(since);
         return changed != null ? changed.getSequenceNumber() : since;
     }
@@ -1046,7 +1069,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         super.onDestroy();
         unregisterReceiver(packageReceiver);
         wallpaperPlayer.close();
-        ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
         if (tim != null) tim.unregisterCallback(inputCallback);
         if (cm != null) {
@@ -1590,7 +1613,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroDots.setVisibility(View.VISIBLE);
         heroArt.setVisibility(View.VISIBLE);
         // One stretched bitmap: apply its alpha while drawing instead of through an offscreen buffer.
-        heroArt.forceHasOverlappingRendering(false);
+        disableOverlappingRendering(heroArt);
         View scrim = findViewById(R.id.heroScrim);
         scrim.setBackground(scrimDrawable());
         scrim.setVisibility(View.VISIBLE);
@@ -1896,7 +1919,21 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (mem != null) appendStat(line, getString(R.string.stats_memory, mem[0], mem[1]));
         String free = formatGb(getResources(), Environment.getDataDirectory().getFreeSpace());
         if (!free.isEmpty()) appendStat(line, getString(R.string.stats_storage, free));
-        return StatsText.forLocale(line.toString(), getResources().getConfiguration().getLocales().get(0));
+        return StatsText.forLocale(line.toString(), currentLocale());
+    }
+
+    private Locale currentLocale() {
+        android.content.res.Configuration configuration = getResources().getConfiguration();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            Locale locale = configuration.getLocales().get(0);
+            if (locale != null) return locale;
+        }
+        Locale locale = configuration.locale;
+        return locale != null ? locale : Locale.getDefault();
+    }
+
+    private static void disableOverlappingRendering(View view) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) view.forceHasOverlappingRendering(false);
     }
 
     // -1: need another sample. -2: this source cannot be read (Android 9 hides /proc/stat from apps).
@@ -2183,7 +2220,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // Indonesian day parts run on different hours than English:
         // Pagi 00-10, Siang 10-15, Sore 15-18, Malam 18-24.
         // The app's own locale (per-app language on Android 13+), under either code Android uses for Indonesian.
-        String lang = getResources().getConfiguration().getLocales().get(0).getLanguage();
+        String lang = currentLocale().getLanguage();
         if ("in".equals(lang) || "id".equals(lang)) {
             if (hour < 10) res = R.string.good_morning;
             else if (hour < 15) res = R.string.good_afternoon;
@@ -2409,7 +2446,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private static void setFestiveIcon(TextView pill, Drawable icon) {
         // The pills tint their icons to follow focus; the festive ones keep their own colours.
-        pill.setCompoundDrawableTintList(null);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) pill.setCompoundDrawableTintList(null);
         pill.setCompoundDrawablesRelativeWithIntrinsicBounds(icon, null, null, null);
     }
 
@@ -2451,6 +2488,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         return SystemSettings.intent(this, standardAction);
     }
 
+    private boolean isInputHidden(TvInputInfo info) {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && info.isHidden(this);
+    }
+
+    private CharSequence customInputLabel(TvInputInfo info) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return null;
+        return info.loadCustomLabel(this);
+    }
+
     /** Hides the Inputs pill when it would have nothing to list: streaming boxes have no HDMI-in, AV or tuner. */
     private void updateInputsButton() {
         if (!showInputsPill) {
@@ -2463,7 +2509,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (!any && tim != null) {
             for (TvInputInfo info : tim.getTvInputList()) {
                 // Inputs hidden in Settings > Inputs are left out of the menu, so they don't count here either.
-                if (info.isPassthroughInput() && !info.isHidden(this)) {
+                if (info.isPassthroughInput() && !isInputHidden(info)) {
                     any = true;
                     break;
                 }
@@ -2626,7 +2672,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             for (TvInputInfo info : inputs) {
                 String parent = info.getParentId();
                 if (parent == null || !inputIds.contains(parent)) continue;
-                if (!info.isPassthroughInput() || info.isHidden(this)) continue;
+                if (!info.isPassthroughInput() || isInputHidden(info)) continue;
                 List<TvInputInfo> onPort = cecDevices.get(parent);
                 if (onPort == null) cecDevices.put(parent, onPort = new ArrayList<>());
                 onPort.add(info);
@@ -2664,7 +2710,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     }
                 }
                 // Inputs hidden in the TV's Settings > Inputs stay out of the menu too.
-                if (!info.isPassthroughInput() || info.isHidden(this)) continue;
+                if (!info.isPassthroughInput() || isInputHidden(info)) continue;
                 // input_sources can leave out ports the board reports but the set does not have ("HW8=-").
                 if (Integer.valueOf(-1).equals(mappedSource(info.getId()))) continue;
                 // A CEC device's row is added with its port, below.
@@ -2673,7 +2719,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 String label = l == null ? info.getId() : l.toString();
                 boolean hdmi = info.getType() == TvInputInfo.TYPE_HDMI;
                 if (hdmi && !label.toUpperCase(Locale.ROOT).contains("HDMI")) label = "HDMI " + label;
-                CharSequence custom = info.loadCustomLabel(this);
+                CharSequence custom = customInputLabel(info);
                 boolean named = custom != null && custom.length() > 0 && !custom.toString().equals(label);
                 if (!hdmi && rows.getChildCount() > 0 && !sawNonHdmi) addSeparator(rows);
                 if (!hdmi) sawNonHdmi = true;
@@ -2683,7 +2729,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     // Settings > Inputs), then the port. Opening the device's input also makes it the CEC
                     // active source, which wakes it.
                     for (TvInputInfo device : devices) {
-                        CharSequence name = device.loadCustomLabel(this);
+                        CharSequence name = customInputLabel(device);
                         if (name == null || name.length() == 0) name = named ? custom : device.loadLabel(this);
                         String deviceLabel = name == null || name.length() == 0 ? label : name + " \u00B7 " + label;
                         final String deviceId = device.getId();

@@ -2,6 +2,7 @@ package com.gathin.tvhome;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.os.Build;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.RectF;
@@ -37,8 +38,10 @@ public class GlassView extends View {
         glow.setStyle(Paint.Style.STROKE);
         // Cache the slab as a texture. The spring only changes translation, so the GPU can
         // move it without replaying clipPath and the glow on every frame. That path is
-        // software-rendered on the MT5895 and is what makes the highlight crawl.
-        setLayerType(LAYER_TYPE_HARDWARE, null);
+        // software-rendered on the MT5895 and is what makes the highlight crawl. Android 5.1
+        // firmware (MSD6A828) does not resize the cached layer after a focus change and keeps
+        // painting the previous, larger slab over the hero and its neighbours, so draw directly there.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) setLayerType(LAYER_TYPE_HARDWARE, null);
     }
 
     /** Tints the rim and the outer glow; 0 restores the plain white glass. */

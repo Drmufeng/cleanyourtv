@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The UI fonts, looked up through these strings so a locale can swap in a system family: Outfit has no
-     glyphs for most Vietnamese accented letters, so values-vi points them at the system sans-serif (#833). -->
-<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="ReferenceType">
-    <string name="font_body" translatable="false">@font/outfit</string>
-    <string name="font_regular" translatable="false">@font/outfit_regular</string>
-    <string name="font_light" translatable="false">@font/outfit_light</string>
-    <string name="font_extralight" translatable="false">@font/outfit_extralight</string>
-    <string name="font_medium" translatable="false">@font/outfit_medium</string>
+<!-- Android 5.x has no font resource loader. API 26+ replaces these with the bundled Outfit faces. -->
+<resources>
+    <string name="font_body" translatable="false">sans-serif</string>
+    <string name="font_regular" translatable="false">sans-serif</string>
+    <string name="font_light" translatable="false">sans-serif-light</string>
+    <string name="font_extralight" translatable="false">sans-serif-thin</string>
+    <string name="font_medium" translatable="false">sans-serif-medium</string>
 </resources>
